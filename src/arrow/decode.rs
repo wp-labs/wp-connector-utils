@@ -6,7 +6,6 @@
 use arrow::ipc::reader::StreamReader;
 use arrow::record_batch::RecordBatch;
 
-
 // ---------------------------------------------------------------------------
 // Decode (source direction)
 // ---------------------------------------------------------------------------

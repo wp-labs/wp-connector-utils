@@ -3,7 +3,6 @@
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use wp_model_core::model::DataRecord;
 
-
 // ---------------------------------------------------------------------------
 // Schema inference (migrated from arrow_conv/schema.rs)
 // ---------------------------------------------------------------------------

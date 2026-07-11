@@ -9,7 +9,6 @@ use arrow::record_batch::RecordBatch;
 use orion_error::conversion::SourceRawErr;
 use wp_connector_api::{SinkReason, SinkResult};
 
-
 // ---------------------------------------------------------------------------
 // Encode (sink direction)
 // ---------------------------------------------------------------------------

@@ -1,6 +1,5 @@
 //! `DataRecord` → `RecordBatch` conversion with typed column builders.
 
-use std::sync::Arc;
 use arrow::array::{
     ArrayRef, BinaryBuilder, BooleanBuilder, Float64Builder, Int32Builder, Int64Builder,
     StringBuilder, TimestampNanosecondBuilder,
@@ -8,10 +7,10 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use orion_error::conversion::ToStructError;
+use std::sync::Arc;
 use wp_connector_api::{SinkReason, SinkResult};
 use wp_model_core::model::DataRecord;
 use wp_model_core::model::Value;
-
 
 // ---------------------------------------------------------------------------
 // DataRecord → RecordBatch (migrated from arrow_conv/batch.rs)
