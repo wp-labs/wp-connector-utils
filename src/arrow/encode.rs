@@ -75,3 +75,56 @@ pub fn encode_ipc_frame_multi(tag: &str, batches: &[RecordBatch]) -> SinkResult<
     }
     Ok(buf)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::array::StringArray;
+    use arrow::datatypes::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    fn make_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![Field::new("x", DataType::Utf8, false)]))
+    }
+
+    fn make_batch(schema: &Arc<Schema>, values: Vec<&str>) -> RecordBatch {
+        RecordBatch::try_new(schema.clone(), vec![Arc::new(StringArray::from(values))]).unwrap()
+    }
+
+    #[test]
+    fn ipc_roundtrip() {
+        let s = make_schema();
+        let b = make_batch(&s, vec!["hi"]);
+        let ipc = encode_batch_ipc_stream(&b).unwrap();
+        // Arrow IPC Stream starts with 0xFFFFFFFF (continuation marker)
+        assert!(ipc.len() > 8);
+        assert_eq!(&ipc[0..4], &[0xff, 0xff, 0xff, 0xff]);
+    }
+
+    #[test]
+    fn framed_roundtrip() {
+        let s = make_schema();
+        let b = make_batch(&s, vec!["hi"]);
+        let frame = encode_ipc_frame("my_tag", &b).unwrap();
+        // tag_len = 6, tag = "my_tag"
+        assert_eq!(&frame[0..4], &6u32.to_be_bytes());
+        assert_eq!(&frame[4..10], b"my_tag");
+    }
+
+    #[test]
+    fn ipc_frame_multi_roundtrip() {
+        let s = make_schema();
+        let b1 = make_batch(&s, vec!["a"]);
+        let b2 = make_batch(&s, vec!["b", "c"]);
+        let frame = encode_ipc_frame_multi("multi", &[b1, b2]).unwrap();
+        assert_eq!(&frame[0..4], &5u32.to_be_bytes());
+        assert_eq!(&frame[4..9], b"multi");
+    }
+
+    #[test]
+    fn ipc_frame_multi_empty() {
+        let frame = encode_ipc_frame_multi("tag", &[]).unwrap();
+        assert_eq!(&frame[0..4], &3u32.to_be_bytes());
+        assert_eq!(&frame[4..7], b"tag");
+    }
+}

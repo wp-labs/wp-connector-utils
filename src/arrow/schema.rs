@@ -81,3 +81,51 @@ pub fn infer_schema_from_record(record: &DataRecord) -> Schema {
             .collect::<Vec<_>>(),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::datatypes::DataType;
+    use wp_model_core::model::{DataRecord, Field as ModelField, FieldStorage};
+
+    #[test]
+    fn schema_inferred_from_record() {
+        let rec = DataRecord::from(vec![
+            FieldStorage::from(ModelField::from_chars("name", "a")),
+            FieldStorage::from(ModelField::from_digit("count", 1)),
+        ]);
+        let schema = infer_schema_from_record(&rec);
+        assert_eq!(schema.fields().len(), 2);
+        assert_eq!(schema.field(0).name(), "name");
+        assert_eq!(schema.field(1).name(), "count");
+    }
+
+    #[test]
+    fn ignore_field_excluded() {
+        let rec = DataRecord::from(vec![
+            FieldStorage::from(ModelField::from_chars("name", "a")),
+            FieldStorage::from(ModelField::from_ignore("junk")),
+        ]);
+        let schema = infer_schema_from_record(&rec);
+        assert_eq!(schema.fields().len(), 1);
+        assert_eq!(schema.field(0).name(), "name");
+    }
+
+    #[test]
+    fn bool_maps_to_boolean() {
+        let dt = wp_type_to_arrow(&wp_model_core::model::DataType::Bool);
+        assert_eq!(dt, DataType::Boolean);
+    }
+
+    #[test]
+    fn digit_maps_to_int64() {
+        let dt = wp_type_to_arrow(&wp_model_core::model::DataType::Digit);
+        assert_eq!(dt, DataType::Int64);
+    }
+
+    #[test]
+    fn hex_maps_to_binary() {
+        let dt = wp_type_to_arrow(&wp_model_core::model::DataType::Hex);
+        assert_eq!(dt, DataType::Binary);
+    }
+}

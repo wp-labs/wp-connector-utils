@@ -266,3 +266,107 @@ fn empty_column_for_type(data_type: &DataType, _capacity: usize) -> Result<Array
     };
     Ok(arr)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::array::Array;
+    use arrow::datatypes::{DataType, Field, Schema};
+    use std::sync::Arc;
+    use wp_model_core::model::{DataRecord, Field as ModelField, FieldStorage};
+
+    fn make_schema(fields: &[&str]) -> Arc<Schema> {
+        Arc::new(Schema::new(
+            fields
+                .iter()
+                .map(|f| Field::new(*f, DataType::Utf8, true))
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    // -- data_record_to_batch -------------------------------------------
+
+    #[test]
+    fn record_to_batch_roundtrip() {
+        let rec = DataRecord::from(vec![
+            FieldStorage::from(ModelField::from_chars("name", "alice")),
+            FieldStorage::from(ModelField::from_chars("count", "42")),
+        ]);
+        let schema = make_schema(&["name", "count"]);
+        let batch = data_record_to_batch(&rec, &schema).unwrap();
+        assert_eq!(batch.num_rows(), 1);
+        assert_eq!(batch.num_columns(), 2);
+    }
+
+    #[test]
+    fn missing_field_defaults_to_null() {
+        let rec = DataRecord::from(vec![FieldStorage::from(ModelField::from_chars("x", "v"))]);
+        let s = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Utf8, true),
+            Field::new("y", DataType::Int64, true),
+        ]));
+        let b = data_record_to_batch(&rec, &s).unwrap();
+        assert_eq!(b.num_columns(), 2);
+        let y = b
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow::array::Int64Array>()
+            .unwrap();
+        assert!(y.is_null(0));
+    }
+
+    // -- data_records_to_batch ------------------------------------------
+
+    #[test]
+    fn records_to_batch_multiple_rows() {
+        let records: Vec<Arc<DataRecord>> = (0..3)
+            .map(|i| {
+                Arc::new(DataRecord::from(vec![FieldStorage::from(
+                    ModelField::from_chars("v", format!("{i}")),
+                )]))
+            })
+            .collect();
+        let s = make_schema(&["v"]);
+        let b = data_records_to_batch(&records, &s).unwrap();
+        assert_eq!(b.num_rows(), 3);
+    }
+
+    #[test]
+    fn records_to_batch_empty() {
+        let s = make_schema(&["x"]);
+        let b = data_records_to_batch(&[], &s).unwrap();
+        assert_eq!(b.num_rows(), 0);
+    }
+
+    // -- parse helpers --------------------------------------------------
+
+    #[test]
+    fn parse_digit_chars_fallback() {
+        assert_eq!(parse_digit(&Value::Chars("123".into())), Some(123));
+    }
+
+    #[test]
+    fn parse_digit_invalid() {
+        assert_eq!(parse_digit(&Value::Chars("abc".into())), None);
+    }
+
+    #[test]
+    fn parse_float_chars() {
+        let r = parse_float(&Value::Chars("2.71".into())).unwrap();
+        assert!((r - 2.71).abs() < 0.001);
+    }
+
+    // -- value formatting -----------------------------------------------
+
+    #[test]
+    fn hex_to_raw_bytes() {
+        use wp_model_core::model::types::value::HexT;
+        assert_eq!(to_raw_bytes(&Value::Hex(HexT(0x1A2B))), vec![0x1A, 0x2B]);
+        assert_eq!(to_raw_bytes(&Value::Hex(HexT(0))), vec![0]);
+    }
+
+    #[test]
+    fn chars_fallback_for_binary() {
+        assert_eq!(to_raw_bytes(&Value::Chars("hello".into())), b"hello");
+    }
+}

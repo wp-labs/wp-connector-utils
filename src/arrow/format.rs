@@ -41,3 +41,55 @@ impl WireFormat {
         matches!(self, WireFormat::ArrowStream | WireFormat::ArrowFramed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_ndjson() {
+        assert_eq!(WireFormat::from_data_format(None), WireFormat::Ndjson);
+        assert_eq!(WireFormat::default(), WireFormat::Ndjson);
+    }
+    #[test]
+    fn parses_arrow() {
+        assert_eq!(
+            WireFormat::from_data_format(Some("arrow_ipc")),
+            WireFormat::ArrowStream
+        );
+        assert_eq!(
+            WireFormat::from_data_format(Some("arrow_framed")),
+            WireFormat::ArrowFramed
+        );
+    }
+    #[test]
+    fn unknown_falls_back() {
+        assert_eq!(WireFormat::from_data_format(Some("x")), WireFormat::Ndjson);
+    }
+    #[test]
+    fn parse_strict_rejects_unknown() {
+        assert!(WireFormat::parse_strict(Some("x")).is_err());
+    }
+    #[test]
+    fn parse_strict_accepts_known() {
+        assert_eq!(WireFormat::parse_strict(None).unwrap(), WireFormat::Ndjson);
+        assert_eq!(
+            WireFormat::parse_strict(Some("ndjson")).unwrap(),
+            WireFormat::Ndjson
+        );
+        assert_eq!(
+            WireFormat::parse_strict(Some("arrow_ipc")).unwrap(),
+            WireFormat::ArrowStream
+        );
+        assert_eq!(
+            WireFormat::parse_strict(Some("arrow_framed")).unwrap(),
+            WireFormat::ArrowFramed
+        );
+    }
+    #[test]
+    fn is_arrow_flag() {
+        assert!(!WireFormat::Ndjson.is_arrow());
+        assert!(WireFormat::ArrowStream.is_arrow());
+        assert!(WireFormat::ArrowFramed.is_arrow());
+    }
+}
