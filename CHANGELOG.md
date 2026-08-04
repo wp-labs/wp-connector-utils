@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-04
+
+### ⚠️ BREAKING CHANGES
+
+- 依赖 `wp-model-core` 0.8 → 0.9（上游新增 `Value::BigUint` / `DataType::BigInt` 变体），版本升至 0.2.0
+
+### Added
+
+- `arrow::schema` 映射 `DataType::BigInt` → `DataType::Utf8`：任意精度整数（`Value::BigUint`）字段以十进制字符串输出，与 `format_utf8_value` 的 `to_string()` 路径一致
+
+### Tests
+
+- 新增 `bigint_maps_to_utf8` 断言
+
 ## [0.1.2] - 2026-07-12
 
 ### Added
@@ -26,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ndjson` 模块：`ndjson_to_record_batch`
 - 测试覆盖：45 个（arrow 29 + batch 8 + ndjson 8）
 
-[Unreleased]: https://github.com/wp-labs/wp-connector-utils/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/wp-labs/wp-connector-utils/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/wp-labs/wp-connector-utils/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/wp-labs/wp-connector-utils/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/wp-labs/wp-connector-utils/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/wp-labs/wp-connector-utils/releases/tag/v0.1.0

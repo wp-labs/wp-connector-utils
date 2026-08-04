@@ -29,6 +29,8 @@ fn wp_type_to_arrow(dt: &wp_model_core::model::DataType) -> DataType {
     match dt {
         WpDt::Bool => DataType::Boolean,
         WpDt::Digit => DataType::Int64,
+        // 任意精度整数（BigUint）：以十进制字符串输出（与 format_utf8_value 的 to_string 一致）
+        WpDt::BigInt => DataType::Utf8,
         WpDt::Float => DataType::Float64,
         WpDt::Port => DataType::Int32,
         WpDt::Time
@@ -127,5 +129,12 @@ mod tests {
     fn hex_maps_to_binary() {
         let dt = wp_type_to_arrow(&wp_model_core::model::DataType::Hex);
         assert_eq!(dt, DataType::Binary);
+    }
+
+    #[test]
+    fn bigint_maps_to_utf8() {
+        // 任意精度整数（BigUint）以十进制字符串输出
+        let dt = wp_type_to_arrow(&wp_model_core::model::DataType::BigInt);
+        assert_eq!(dt, DataType::Utf8);
     }
 }

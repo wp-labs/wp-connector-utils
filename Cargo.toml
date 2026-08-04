@@ -1,6 +1,6 @@
 [package]
 name = "wp-connector-utils"
-version = "0.1.2" #@gxl:set(version)
+version = "0.2.0" #@gxl:set(version)
 edition = "2024"
 description = "Shared utilities for WP connector implementations — Arrow IPC encode/decode, WireFormat, NDJSON conversion, and batch metadata processing"
 authors = ["WarpParse Dev Team"]
@@ -13,8 +13,8 @@ keywords = ["arrow", "ipc", "connector", "warpparse", "ndjson"]
 categories = ["asynchronous", "encoding", "parsing"]
 
 [dependencies]
-wp-connector-api = "0.11"
-wp-model-core = "0.8"
+wp-connector-api = "0.12"
+wp-model-core = "0.9"
 arrow = { version = "59", default-features = false, features = ["ipc"] }
 orion-error = "0.8"
 serde_json = "1.0"
