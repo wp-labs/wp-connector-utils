@@ -8,6 +8,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
+use chrono::{DateTime, NaiveDateTime};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -50,6 +51,68 @@ pub fn ndjson_to_record_batch(
     let batch = RecordBatch::try_new(Arc::new(schema.clone()), arrays?)
         .map_err(|e| format!("arrow error: {e}"))?;
     Ok(Some(batch))
+}
+
+/// JSON value → epoch nanoseconds for a `time`-typed column.
+///
+/// Numeric epoch timestamps are recognized by digit width (seconds,
+/// milliseconds, microseconds, nanoseconds); strings may be RFC3339,
+/// `%Y-%m-%d %H:%M:%S`, or numeric epoch values using the same unit
+/// inference. Any other value yields `None` (the cell stays null).
+fn timestamp_value_nanos(value: &serde_json::Value) -> Option<i64> {
+    match value {
+        serde_json::Value::Number(number) => number
+            .as_i64()
+            .and_then(epoch_int_nanos)
+            .or_else(|| number.as_f64().and_then(epoch_float_nanos)),
+        serde_json::Value::String(text) => {
+            if let Some(nanos) = DateTime::parse_from_rfc3339(text)
+                .ok()
+                .or_else(|| {
+                    NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S")
+                        .ok()
+                        .map(|dt| dt.and_utc().fixed_offset())
+                })
+                .and_then(|dt| dt.timestamp_nanos_opt())
+            {
+                return Some(nanos);
+            }
+            text.parse::<i64>()
+                .ok()
+                .and_then(epoch_int_nanos)
+                .or_else(|| text.parse::<f64>().ok().and_then(epoch_float_nanos))
+        }
+        _ => None,
+    }
+}
+
+/// Epoch-unit multiplier chosen by absolute digit width, so
+/// `1643163078` (s), `1643163078468` (ms), `1643163078468000` (us) and
+/// `1643163078468000000` (ns) all normalize to the same instant.
+fn epoch_unit_multiplier(abs: i64) -> i64 {
+    match abs {
+        0..=9_999_999_999 => 1_000_000_000,
+        10_000_000_000..=9_999_999_999_999 => 1_000_000,
+        10_000_000_000_000..=9_999_999_999_999_999 => 1_000,
+        _ => 1,
+    }
+}
+
+fn epoch_int_nanos(raw: i64) -> Option<i64> {
+    let abs = raw.checked_abs().unwrap_or(i64::MAX);
+    let nanos = i128::from(raw) * i128::from(epoch_unit_multiplier(abs));
+    i64::try_from(nanos).ok()
+}
+
+fn epoch_float_nanos(raw: f64) -> Option<i64> {
+    if !raw.is_finite() {
+        return None;
+    }
+    let nanos = raw * epoch_unit_multiplier(raw.abs() as i64) as f64;
+    if !nanos.is_finite() || nanos < i64::MIN as f64 || nanos > i64::MAX as f64 {
+        return None;
+    }
+    Some(nanos.round() as i64)
 }
 
 fn build_array(field: &Field, values: &[serde_json::Value]) -> Result<ArrayRef, String> {
@@ -106,12 +169,7 @@ fn build_array(field: &Field, values: &[serde_json::Value]) -> Result<ArrayRef, 
         DataType::Timestamp(TimeUnit::Nanosecond, None) => {
             let arr: TimestampNanosecondArray = values
                 .iter()
-                .map(|v| match v {
-                    serde_json::Value::String(s) => chrono::DateTime::parse_from_rfc3339(s)
-                        .ok()
-                        .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0)),
-                    _ => None,
-                })
+                .map(timestamp_value_nanos)
                 .collect::<Vec<_>>()
                 .into();
             Ok(Arc::new(arr))
@@ -200,6 +258,66 @@ mod tests {
         ];
         let batch = ndjson_to_record_batch(&lines, &schema).unwrap().unwrap();
         assert_eq!(batch.num_rows(), 2);
+    }
+
+    #[test]
+    fn timestamp_from_numeric_epoch_units() {
+        // issue #95: numeric JSON timestamps (s / ms / us / ns and numeric
+        // strings) must map to epoch nanoseconds — previously only RFC3339
+        // strings were recognized and numbers became null.
+        let schema = Schema::new(vec![Field::new(
+            "ts",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            true,
+        )]);
+        let lines = vec![
+            r#"{"ts":1600000000}"#.to_string(),
+            r#"{"ts":1600000000001}"#.to_string(),
+            r#"{"ts":1600000000001002}"#.to_string(),
+            r#"{"ts":1600000000001002003}"#.to_string(),
+            r#"{"ts":"1600000000001"}"#.to_string(),
+            r#"{"ts":1600000000001.0}"#.to_string(),
+        ];
+        let batch = ndjson_to_record_batch(&lines, &schema).unwrap().unwrap();
+        let arr = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .expect("timestamp column");
+        assert_eq!(
+            &arr.values()[..5],
+            &[
+                1600000000000000000, // s
+                1600000000001000000, // ms
+                1600000000001002000, // us
+                1600000000001002003, // ns
+                1600000000001000000, // numeric string (ms)
+            ]
+        );
+        // 浮点路径在 ns 量级受 f64 精度限制，允许毫秒舍入误差。
+        assert!(
+            (arr.value(5) - 1600000000001000000).abs() < 1000,
+            "float ms drifted: {}",
+            arr.value(5)
+        );
+    }
+
+    #[test]
+    fn timestamp_issue_sample_millis() {
+        // Issue #95 复现样本：1643163078468 ms → 1643163078468000000 ns。
+        let schema = Schema::new(vec![Field::new(
+            "time_field",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            true,
+        )]);
+        let lines = vec![r#"{"time_field":1643163078468}"#.to_string()];
+        let batch = ndjson_to_record_batch(&lines, &schema).unwrap().unwrap();
+        let arr = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .expect("timestamp column");
+        assert_eq!(arr.value(0), 1_643_163_078_468_000_000);
     }
 
     #[test]
