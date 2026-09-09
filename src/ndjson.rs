@@ -115,6 +115,16 @@ fn epoch_float_nanos(raw: f64) -> Option<i64> {
     Some(nanos.round() as i64)
 }
 
+/// 布尔文本（去空白/大小写后）→ bool：与运行时文件输入解析一致，
+/// 仅接受 true/false 与 1/0（`"1"`/`"TRUE"`/`" true "` 均有效）。
+fn parse_bool_text(text: &str) -> Option<bool> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    }
+}
+
 fn build_array(field: &Field, values: &[serde_json::Value]) -> Result<ArrayRef, String> {
     match field.data_type() {
         DataType::Utf8 | DataType::LargeUtf8 => {
@@ -159,7 +169,7 @@ fn build_array(field: &Field, values: &[serde_json::Value]) -> Result<ArrayRef, 
                 .iter()
                 .map(|v| match v {
                     serde_json::Value::Bool(b) => Some(*b),
-                    serde_json::Value::String(s) => s.parse::<bool>().ok(),
+                    serde_json::Value::String(s) => parse_bool_text(s),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -181,6 +191,7 @@ fn build_array(field: &Field, values: &[serde_json::Value]) -> Result<ArrayRef, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::array::Array;
 
     fn test_schema() -> Schema {
         Schema::new(vec![
@@ -299,6 +310,41 @@ mod tests {
             (arr.value(5) - 1600000000001000000).abs() < 1000,
             "float ms drifted: {}",
             arr.value(5)
+        );
+    }
+
+    #[test]
+    fn boolean_text_forms_match_file_input() {
+        // 与运行时文件输入一致：true/false/1/0 + 大小写与空白均有效。
+        let schema = Schema::new(vec![Field::new("active", DataType::Boolean, true)]);
+        let lines = vec![
+            r#"{"active":true}"#.to_string(),
+            r#"{"active":"true"}"#.to_string(),
+            r#"{"active":"TRUE"}"#.to_string(),
+            r#"{"active":" 1 "}"#.to_string(),
+            r#"{"active":"0"}"#.to_string(),
+            r#"{"active":"false"}"#.to_string(),
+            r#"{"active":null}"#.to_string(),
+        ];
+        let batch = ndjson_to_record_batch(&lines, &schema).unwrap().unwrap();
+        let arr = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .expect("boolean column");
+        assert_eq!(
+            (0..batch.num_rows())
+                .map(|r| arr.is_valid(r).then(|| arr.value(r)))
+                .collect::<Vec<_>>(),
+            vec![
+                Some(true),
+                Some(true),
+                Some(true),
+                Some(true),
+                Some(false),
+                Some(false),
+                None,
+            ]
         );
     }
 

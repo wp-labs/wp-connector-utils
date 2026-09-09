@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **NDJSON 数字时间戳转 null（warp-fusion#95）**：`ndjson_to_record_batch` 的 `Timestamp(Nanosecond)` 列此前只识别 RFC3339 字符串；现在支持 JSON 数字时间戳（秒/毫秒/微秒/纳秒按位宽归一化，含浮点）与数字字符串、`%Y-%m-%d %H:%M:%S` 字符串——与运行时文件输入的 NDJSON 时间语义一致。
+- **NDJSON 数字时间戳转 null（warp-fusion#95）**（另补同类：Boolean 文本 `1/0`/大小写/空白与文件输入一致）：`ndjson_to_record_batch` 的 `Timestamp(Nanosecond)` 列此前只识别 RFC3339 字符串；现在支持 JSON 数字时间戳（秒/毫秒/微秒/纳秒按位宽归一化，含浮点）与数字字符串、`%Y-%m-%d %H:%M:%S` 字符串——与运行时文件输入的 NDJSON 时间语义一致。
 
 ## [0.2.0] - 2026-08-04
 
