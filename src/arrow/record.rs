@@ -1,280 +1,56 @@
-//! `DataRecord` → `RecordBatch` conversion with typed column builders.
+//! `DataRecord` → `RecordBatch` **值层**（A-2 第 3 步：实现已迁往 `wp-arrow`）。
+//!
+//! 本模块现在只做两件事：**转发**到 `wp_arrow::contract::{encode_record, encode_records}`，
+//! 以及把 [`wp_arrow::error::WpArrowError`] 映射回 connector 侧的 `SinkResult`。
+//! 公开签名与错误文案形状不变，调用方（`wp-core-connectors` 的 file/tcp sink）零改动。
+//!
+//! # 为什么迁走
+//!
+//! 本 crate 是「面向 sink 的 connector 工具」，而 `DataRecord → 列` 的编码口径属于
+//! **wparse(sink) ↔ wfusion(接收) 的线协议契约**，语义归属在专门做这件事的 `wp-arrow`
+//! （与 [`crate::arrow::wp_type_to_arrow`] 的表同处一层：表决定「这一列是什么 Arrow 类型」，
+//! 编码决定「值怎么写进那一列」）。分开两处会让「改了一边忘了另一边」变成静默的线上错配。
+//!
+//! 规格表（单一事实来源）：`wp-reactor/docs/design/arrow-type-mapping.md`。
 
-use arrow::array::{
-    ArrayRef, BinaryBuilder, BooleanBuilder, Float64Builder, Int32Builder, Int64Builder,
-    StringBuilder, TimestampNanosecondBuilder,
-};
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use std::sync::Arc;
+
+use arrow::datatypes::Schema;
 use arrow::record_batch::RecordBatch;
 use orion_error::conversion::ToStructError;
-use std::sync::Arc;
 use wp_connector_api::{SinkReason, SinkResult};
 use wp_model_core::model::DataRecord;
-use wp_model_core::model::Value;
 
-// ---------------------------------------------------------------------------
-// DataRecord → RecordBatch (migrated from arrow_conv/batch.rs)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// DataRecord → RecordBatch
-// ---------------------------------------------------------------------------
-
-/// Convert a single `DataRecord` into an Arrow `RecordBatch`.
+/// 单条 `DataRecord` → 一行 `RecordBatch`（转发，见模块文档）。
 ///
-/// Each field in the schema is looked up by name in the record.
-/// Missing fields default to null.
+/// 每个列按名字在记录里查找；缺字段 → null。
 pub fn data_record_to_batch(record: &DataRecord, schema: &Arc<Schema>) -> SinkResult<RecordBatch> {
-    let mut columns: Vec<ArrayRef> = Vec::with_capacity(schema.fields().len());
-
-    for field in schema.fields() {
-        let records = [Arc::new(record.clone())];
-        columns.push(build_column_from_field(field, &records)?);
-    }
-
-    RecordBatch::try_new(Arc::clone(schema), columns).map_err(|e| {
+    wp_arrow::contract::encode_record(record, schema).map_err(|e| {
         SinkReason::Sink
             .to_err()
             .with_detail(format!("data_record_to_batch failed: {e}"))
     })
 }
 
-/// Convert multiple `DataRecord`s into a single Arrow `RecordBatch`.
+/// 多条 `DataRecord` → 一个 `RecordBatch`（转发，见模块文档）。
 ///
-/// Each field in the schema is looked up by name in each record.
-/// Missing fields default to null.
+/// 每个列按名字在**每条**记录里查找；缺字段 → null。`records` 为空时按 schema 产零行。
 pub fn data_records_to_batch(
     records: &[Arc<DataRecord>],
     schema: &Arc<Schema>,
 ) -> SinkResult<RecordBatch> {
-    if records.is_empty() {
-        let empty_columns: Vec<ArrayRef> = schema
-            .fields()
-            .iter()
-            .map(|f| empty_column_for_type(f.data_type(), 0))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| {
-                SinkReason::Sink
-                    .to_err()
-                    .with_detail(format!("data_records_to_batch empty failed: {e}"))
-            })?;
-        return RecordBatch::try_new(Arc::clone(schema), empty_columns).map_err(|e| {
-            SinkReason::Sink
-                .to_err()
-                .with_detail(format!("data_records_to_batch empty failed: {e}"))
-        });
-    }
-
-    let num_fields = schema.fields().len();
-    let mut columns: Vec<ArrayRef> = Vec::with_capacity(num_fields);
-
-    for field in schema.fields() {
-        columns.push(build_column_from_field(field, records)?);
-    }
-
-    RecordBatch::try_new(Arc::clone(schema), columns).map_err(|e| {
+    wp_arrow::contract::encode_records(records, schema).map_err(|e| {
         SinkReason::Sink
             .to_err()
             .with_detail(format!("data_records_to_batch failed: {e}"))
     })
 }
 
-// ---------------------------------------------------------------------------
-// Column builders
-// ---------------------------------------------------------------------------
-
-fn build_column_from_field(field: &Field, records: &[Arc<DataRecord>]) -> SinkResult<ArrayRef> {
-    let field_name = field.name();
-    match field.data_type() {
-        DataType::Boolean => {
-            let mut builder = BooleanBuilder::with_capacity(records.len());
-            for record in records {
-                match record.field(field_name).map(|f| f.get_value()) {
-                    Some(Value::Bool(v)) => builder.append_value(*v),
-                    Some(Value::Chars(s)) => builder.append_value(s.eq_ignore_ascii_case("true")),
-                    _ => builder.append_null(),
-                }
-            }
-            Ok(Arc::new(builder.finish()) as ArrayRef)
-        }
-        DataType::Int64 => {
-            let mut builder = Int64Builder::with_capacity(records.len());
-            for record in records {
-                match record
-                    .field(field_name)
-                    .and_then(|f| parse_digit(f.get_value()))
-                {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                }
-            }
-            Ok(Arc::new(builder.finish()) as ArrayRef)
-        }
-        DataType::Int32 => {
-            let mut builder = Int32Builder::with_capacity(records.len());
-            for record in records {
-                match record
-                    .field(field_name)
-                    .and_then(|f| parse_digit(f.get_value()))
-                {
-                    Some(v) => builder.append_value(v as i32),
-                    None => builder.append_null(),
-                }
-            }
-            Ok(Arc::new(builder.finish()) as ArrayRef)
-        }
-        DataType::Binary => {
-            let mut builder = BinaryBuilder::with_capacity(records.len(), records.len() * 64);
-            for record in records {
-                match record.field(field_name).map(|f| f.get_value()) {
-                    Some(v) => {
-                        let bytes = to_raw_bytes(v);
-                        builder.append_value(&bytes[..]);
-                    }
-                    None => builder.append_null(),
-                }
-            }
-            Ok(Arc::new(builder.finish()) as ArrayRef)
-        }
-        DataType::Float64 => {
-            let mut builder = Float64Builder::with_capacity(records.len());
-            for record in records {
-                match record
-                    .field(field_name)
-                    .and_then(|f| parse_float(f.get_value()))
-                {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                }
-            }
-            Ok(Arc::new(builder.finish()) as ArrayRef)
-        }
-        DataType::Timestamp(TimeUnit::Nanosecond, None) => {
-            let mut builder = TimestampNanosecondBuilder::with_capacity(records.len());
-            for record in records {
-                match record
-                    .field(field_name)
-                    .and_then(|f| parse_timestamp_ns(f.get_value()))
-                {
-                    Some(v) => builder.append_value(v),
-                    None => builder.append_null(),
-                }
-            }
-            Ok(Arc::new(builder.finish()) as ArrayRef)
-        }
-        // Utf8 and everything else
-        _ => {
-            let mut builder = StringBuilder::with_capacity(records.len(), records.len() * 32);
-            for record in records {
-                match record.field(field_name) {
-                    Some(f) => builder.append_value(format_utf8_value(f.get_value())),
-                    None => builder.append_null(),
-                }
-            }
-            Ok(Arc::new(builder.finish()) as ArrayRef)
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Value formatting
-// ---------------------------------------------------------------------------
-
-/// Format a [`Value`] for Utf8 column output.
-///
-/// Complex types (`Obj`, `Array`) are serialized as JSON; all others use [`Display`].
-fn format_utf8_value(v: &Value) -> String {
-    match v {
-        Value::Obj(_) | Value::Array(_) => {
-            serde_json::to_string(v).unwrap_or_else(|_| format!("{v:?}"))
-        }
-        _ => v.to_string(),
-    }
-}
-
-/// Convert a [`Value`] to raw bytes for Binary column output.
-///
-/// `Value::Hex` stores the decoded value as `u128` — extract minimal big-endian bytes.
-/// All other types fall back to the UTF-8 string representation.
-///
-/// 注意：`hex` 字段**不再**走 Binary 列（DIV-1 已对齐为 Utf8，见 `schema.rs`），
-/// 所以 `Value::Hex` 分支只在**显式声明 Binary** 的列上才可达。
-fn to_raw_bytes(v: &Value) -> Vec<u8> {
-    match v {
-        Value::Hex(h) => {
-            if h.0 == 0 {
-                return vec![0];
-            }
-            let be = h.0.to_be_bytes();
-            let start = be.iter().position(|&b| b != 0).unwrap();
-            be[start..].to_vec()
-        }
-        _ => format_utf8_value(v).into_bytes(),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Parse helpers — extract typed values with Chars fallback
-// ---------------------------------------------------------------------------
-
-fn parse_digit(v: &Value) -> Option<i64> {
-    match v {
-        Value::Int(d) => Some(*d),
-        Value::Float(f) => Some(*f as i64),
-        Value::Chars(s) => s.parse().ok(),
-        _ => None,
-    }
-}
-
-fn parse_float(v: &Value) -> Option<f64> {
-    match v {
-        Value::Float(f) => Some(*f),
-        Value::Int(d) => Some(*d as f64),
-        Value::Chars(s) => s.parse().ok(),
-        _ => None,
-    }
-}
-
-fn parse_timestamp_ns(v: &Value) -> Option<i64> {
-    match v {
-        Value::Time(t) => Some(t.and_utc().timestamp_nanos_opt()?),
-        Value::Int(d) => d.checked_mul(1_000_000),
-        Value::Chars(s) => chrono::DateTime::parse_from_rfc3339(s)
-            .ok()
-            .or_else(|| {
-                chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
-                    .ok()
-                    .map(|dt| dt.and_utc().fixed_offset())
-            })
-            .and_then(|dt| dt.timestamp_nanos_opt()),
-        _ => None,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Empty column helpers
-// ---------------------------------------------------------------------------
-
-fn empty_column_for_type(data_type: &DataType, _capacity: usize) -> Result<ArrayRef, String> {
-    let arr: ArrayRef = match data_type {
-        DataType::Boolean => Arc::new(arrow::array::BooleanArray::from(Vec::<bool>::new())),
-        DataType::Int32 => Arc::new(arrow::array::Int32Array::from(Vec::<i32>::new())),
-        DataType::Int64 => Arc::new(arrow::array::Int64Array::from(Vec::<i64>::new())),
-        DataType::Float64 => Arc::new(arrow::array::Float64Array::from(Vec::<f64>::new())),
-        DataType::Timestamp(TimeUnit::Nanosecond, None) => Arc::new(
-            arrow::array::TimestampNanosecondArray::from(Vec::<i64>::new()),
-        ),
-        DataType::Binary => Arc::new(arrow::array::BinaryArray::from(Vec::<Option<&[u8]>>::new())),
-        _ => Arc::new(arrow::array::StringArray::from(Vec::<Option<&str>>::new())),
-    };
-    Ok(arr)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use arrow::array::Array;
-    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use std::sync::Arc;
     use wp_model_core::model::{DataRecord, Field as ModelField, FieldStorage};
 
@@ -341,37 +117,7 @@ mod tests {
         assert_eq!(b.num_rows(), 0);
     }
 
-    // -- parse helpers --------------------------------------------------
-
-    #[test]
-    fn parse_digit_chars_fallback() {
-        assert_eq!(parse_digit(&Value::Chars("123".into())), Some(123));
-    }
-
-    #[test]
-    fn parse_digit_invalid() {
-        assert_eq!(parse_digit(&Value::Chars("abc".into())), None);
-    }
-
-    #[test]
-    fn parse_float_chars() {
-        let r = parse_float(&Value::Chars("2.71".into())).unwrap();
-        assert!((r - 2.71).abs() < 0.001);
-    }
-
-    // -- value formatting -----------------------------------------------
-
-    #[test]
-    fn hex_to_raw_bytes() {
-        use wp_model_core::model::types::value::HexT;
-        assert_eq!(to_raw_bytes(&Value::Hex(HexT(0x1A2B))), vec![0x1A, 0x2B]);
-        assert_eq!(to_raw_bytes(&Value::Hex(HexT(0))), vec![0]);
-    }
-
-    #[test]
-    fn chars_fallback_for_binary() {
-        assert_eq!(to_raw_bytes(&Value::Chars("hello".into())), b"hello");
-    }
+    // -- 值层口径（消费侧拼线）-------------------------------------------
 
     /// DIV-1 修复后的**值层对拍**：`hex` 字段（现为 Utf8 列）写出的字符串，必须与
     /// `wp-arrow`（`convert.rs` `format!("{:#X}", h.0)`）和 `Value::Hex` 的 `Display`
@@ -412,5 +158,163 @@ mod tests {
             .downcast_ref::<arrow::array::BinaryArray>()
             .unwrap();
         assert_eq!(col.value(0), &[0x1A, 0x2B]);
+    }
+
+    /// 线协议**值层**的金标准：覆盖全部列类型 + 缺字段 + 类型回退（Chars/Int/Float/Time 互转）。
+    ///
+    /// A-2 2c 把值层实现从本 crate 迁到了 `wp-arrow` 的 `contract::value`；**同一份夹具与
+    /// 同一组期望在两处各有一份**（本处 + `wp-arrow` 的
+    /// `contract::value::tests::wire_value_encoding_is_pinned_by_golden_values`），
+    /// 两份同时通过即证明搬迁是**等价**改动（不只是「看起来一样」）。
+    ///
+    /// 迁移后本测的职责变为**消费侧**拼线：若 `wp-arrow` 在 patch 版里改了值编码，
+    /// 这里会先报。
+    #[test]
+    fn wire_value_encoding_is_pinned_by_golden_values() {
+        use arrow::array::{
+            BinaryArray, BooleanArray, Float64Array, Int32Array, Int64Array, StringArray,
+            TimestampNanosecondArray,
+        };
+        use wp_model_core::model::DataField;
+        use wp_model_core::model::types::value::{HexT, ObjectValue};
+
+        let epoch =
+            chrono::NaiveDateTime::parse_from_str("2024-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap();
+        let ts_val = epoch + chrono::Duration::seconds(5);
+
+        // row0：全字段齐、尽量走「正路」
+        let mut obj = ObjectValue::new();
+        obj.insert("k", DataField::from_chars("k", "v"));
+        let row0 = DataRecord::from(vec![
+            FieldStorage::from(DataField::from_bool("b", true)),
+            FieldStorage::from(DataField::from_int("i64", 42)),
+            FieldStorage::from(DataField::from_int("i32", 70_000)),
+            FieldStorage::from(DataField::from_float("f", 1.5)),
+            FieldStorage::from(DataField::from_time("ts", ts_val)),
+            FieldStorage::from(DataField::from_chars("bin", "hi")),
+            FieldStorage::from(DataField::from_obj("s", obj)),
+        ]);
+
+        // row1：类型回退（Chars 解析 / Float→Int / Int(ms)→时间戳 / Hex→Binary / Array→JSON）
+        let arr = DataField::from_arr(
+            "s",
+            vec![
+                DataField::from_chars("c", "x"),
+                DataField::from_int("i", 22),
+            ],
+        );
+        let row1 = DataRecord::from(vec![
+            FieldStorage::from(DataField::from_chars("b", "TRUE")),
+            FieldStorage::from(DataField::from_chars("i64", "42")),
+            FieldStorage::from(DataField::from_float("i32", 3.9)),
+            FieldStorage::from(DataField::from_chars("f", "2.71")),
+            FieldStorage::from(DataField::from_int("ts", 1_700_000_000_000)),
+            FieldStorage::from(DataField::from_hex("bin", HexT(0x1A2B))),
+            FieldStorage::from(arr),
+        ]);
+
+        // row2：除 `s` 外全缺 → 其余列 null；`s` 走 Hex 的 Utf8 形态
+        let row2 = DataRecord::from(vec![FieldStorage::from(DataField::from_hex(
+            "s",
+            HexT(0x1A2B),
+        ))]);
+
+        let rows = vec![Arc::new(row0), Arc::new(row1), Arc::new(row2)];
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("b", DataType::Boolean, true),
+            Field::new("i64", DataType::Int64, true),
+            Field::new("i32", DataType::Int32, true),
+            Field::new("f", DataType::Float64, true),
+            Field::new("ts", DataType::Timestamp(TimeUnit::Nanosecond, None), true),
+            Field::new("bin", DataType::Binary, true),
+            Field::new("s", DataType::Utf8, true),
+        ]));
+
+        let batch = data_records_to_batch(&rows, &schema).unwrap();
+        assert_eq!(batch.num_rows(), 3);
+
+        let b = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .unwrap();
+        assert_eq!((b.value(0), b.value(1)), (true, true));
+        assert!(b.is_null(2));
+
+        let i64c = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        assert_eq!((i64c.value(0), i64c.value(1)), (42, 42));
+        assert!(i64c.is_null(2));
+
+        let i32c = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+        assert_eq!((i32c.value(0), i32c.value(1)), (70_000, 3));
+        assert!(i32c.is_null(2));
+
+        let fc = batch
+            .column(3)
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .unwrap();
+        assert_eq!(fc.value(0), 1.5);
+        assert_eq!(fc.value(1), 2.71);
+        assert!(fc.is_null(2));
+
+        let tsc = batch
+            .column(4)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        assert_eq!(
+            tsc.value(0),
+            ts_val.and_utc().timestamp_nanos_opt().unwrap()
+        );
+        assert_eq!(tsc.value(1), 1_700_000_000_000 * 1_000_000);
+        assert!(tsc.is_null(2));
+
+        let binc = batch
+            .column(5)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .unwrap();
+        assert_eq!(binc.value(0), b"hi");
+        assert_eq!(binc.value(1), &[0x1A, 0x2B]);
+        assert!(binc.is_null(2));
+
+        let sc = batch
+            .column(6)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert!(!sc.is_null(2), "row2 的 s 是有的（Hex），不应 null");
+        // 结构化字段走 JSON（`serde_json::to_string` 同一套规则）——不硬编 JSON 形状，
+        // 但把「必须等于源 Value 的 serde_json 渲染」钉住。
+        for (row, field) in [(0usize, "s"), (1usize, "s")] {
+            let src = rows[row].field(field).unwrap().get_value();
+            let rendered = sc.value(row);
+            match serde_json::to_string(src) {
+                Ok(json) => assert_eq!(
+                    rendered, json,
+                    "row{row} 结构化字段应等于源 Value 的 JSON 渲染"
+                ),
+                Err(e) => panic!(
+                    "row{row}: serde_json 渲染失败（{e}）→ 列里实际是 {rendered:?}，src={src:?}"
+                ),
+            }
+            assert!(
+                serde_json::from_str::<serde_json::Value>(rendered).is_ok(),
+                "结构化字段在 Utf8 列里必须是合法 JSON"
+            );
+        }
+        // row2：Hex 走 Utf8 时是 `{:#X}` 形态（与 `Value::Hex` 的 Display 同形）
+        assert_eq!(sc.value(2), "0x1A2B");
+        assert_eq!(sc.value(2), format!("{:#X}", 0x1A2Bu128));
     }
 }

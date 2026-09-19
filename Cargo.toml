@@ -1,6 +1,6 @@
 [package]
 name = "wp-connector-utils"
-version = "0.3.4" #@gxl:set(version)
+version = "0.3.5" #@gxl:set(version)
 edition = "2024"
 description = "Shared utilities for WP connector implementations — Arrow IPC encode/decode, WireFormat, NDJSON conversion, and batch metadata processing"
 authors = ["WarpParse Dev Team"]
@@ -15,12 +15,14 @@ categories = ["asynchronous", "encoding", "parsing"]
 [dependencies]
 wp-connector-api = "0.13"
 wp-model-core = "0.10"
-# 线协议契约表的实现处（A-2 第 2 步：本 crate 的 `arrow::wp_type_to_arrow` 已改为再导出它）
+# 线协议契约（列类型表 + 值层）的实现处（A-2 第 2/3 步：本 crate 的
+# `arrow::wp_type_to_arrow` 与 `arrow::record::*` 已改为转发它）
 #
-# 必须写**最低可用版本** 0.4.1：`contract` 模块是 0.4.1 才有的。若写 `"0.4"`，
-# 消费方 lock 停在 0.4.0 时会解析到缺该模块的版本 → 编译失败（`unresolved import
-# wp_arrow::contract`）。0.3.3 就是这个写法的事故版。
-wp-arrow = "0.4.1"
+# 必须写**最低可用版本**：`contract` 模块是 0.4.1、`contract::value`
+# （`encode_record` / `encode_records`）是 **0.4.2** 才有的。若写只含 major.minor 的
+# 宽松形式，消费方 lock 停在更早的版本时会解析到缺该 API 的版本 → 编译失败
+# （`unresolved import wp_arrow::contract`）；0.3.3 就是这个写法的事故版。
+wp-arrow = "0.4.2"
 arrow = { version = "60", default-features = false, features = ["ipc"] }
 orion-error = "0.8"
 serde_json = "1.0"

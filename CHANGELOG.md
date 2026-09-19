@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-09-19
+
+### Changed
+
+- **值层改为转发 `wp-arrow`（A-2 第 3 步 / 2c）**：`arrow::record::{data_record_to_batch, data_records_to_batch}`
+  的实现迁到 `wp_arrow::contract::value`，本 crate 只做转发并把 `WpArrowError` 映射回
+  `SinkResult`（公开签名不变、错误文案形状不变 → `wp-core-connectors` 的 file/tcp sink 零改动）。
+  至此线协议契约的两层（列类型表 + 值编码）都在 `wp-arrow`，本 crate 不再持有任何口径表或编码实现。
+- 依赖 `wp-arrow` 要求升到 **`0.4.2`**（`contract::value` 是 0.4.2 新增；按最低可用版本写）。
+- 等价性凭据：同一份「金标准」夹具与期望在**迁移前**（本 crate 的实现）与**迁移后**
+  （`wp-arrow` 的 `contract::value`）两处各有一份且同时通过 ——
+  见 `arrow::record::tests::wire_value_encoding_is_pinned_by_golden_values`
+  （实现侧那份在 `wp-arrow`）；本侧那份留作消费侧拼线。
+
 ## [0.3.4] - 2026-09-19
 
 ### Fixed
