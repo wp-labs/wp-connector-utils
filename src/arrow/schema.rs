@@ -28,7 +28,7 @@ fn wp_type_to_arrow(dt: &wp_model_core::model::DataType) -> DataType {
     use wp_model_core::model::DataType as WpDt;
     match dt {
         WpDt::Bool => DataType::Boolean,
-        WpDt::Digit => DataType::Int64,
+        WpDt::Int => DataType::Int64,
         // 任意精度整数（BigUint）：以十进制字符串输出（与 format_utf8_value 的 to_string 一致）
         WpDt::BigInt => DataType::Utf8,
         WpDt::Float => DataType::Float64,
@@ -94,7 +94,7 @@ mod tests {
     fn schema_inferred_from_record() {
         let rec = DataRecord::from(vec![
             FieldStorage::from(ModelField::from_chars("name", "a")),
-            FieldStorage::from(ModelField::from_digit("count", 1)),
+            FieldStorage::from(ModelField::from_int("count", 1)),
         ]);
         let schema = infer_schema_from_record(&rec);
         assert_eq!(schema.fields().len(), 2);
@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn digit_maps_to_int64() {
-        let dt = wp_type_to_arrow(&wp_model_core::model::DataType::Digit);
+        let dt = wp_type_to_arrow(&wp_model_core::model::DataType::Int);
         assert_eq!(dt, DataType::Int64);
     }
 

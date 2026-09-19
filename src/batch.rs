@@ -128,7 +128,7 @@ mod tests {
         let meta = BatchMeta::with_oml_name("out");
         let data = vec![make_record(vec![
             FieldStorage::from(ModelField::from_chars("name", "alice")),
-            FieldStorage::from(ModelField::from_digit("count", 42)),
+            FieldStorage::from(ModelField::from_int("count", 42)),
         ])];
 
         let result = inject_oml_name(&meta, data);

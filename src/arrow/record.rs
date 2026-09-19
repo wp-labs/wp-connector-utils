@@ -216,7 +216,7 @@ fn to_raw_bytes(v: &Value) -> Vec<u8> {
 
 fn parse_digit(v: &Value) -> Option<i64> {
     match v {
-        Value::Digit(d) => Some(*d),
+        Value::Int(d) => Some(*d),
         Value::Float(f) => Some(*f as i64),
         Value::Chars(s) => s.parse().ok(),
         _ => None,
@@ -226,7 +226,7 @@ fn parse_digit(v: &Value) -> Option<i64> {
 fn parse_float(v: &Value) -> Option<f64> {
     match v {
         Value::Float(f) => Some(*f),
-        Value::Digit(d) => Some(*d as f64),
+        Value::Int(d) => Some(*d as f64),
         Value::Chars(s) => s.parse().ok(),
         _ => None,
     }
@@ -235,7 +235,7 @@ fn parse_float(v: &Value) -> Option<f64> {
 fn parse_timestamp_ns(v: &Value) -> Option<i64> {
     match v {
         Value::Time(t) => Some(t.and_utc().timestamp_nanos_opt()?),
-        Value::Digit(d) => d.checked_mul(1_000_000),
+        Value::Int(d) => d.checked_mul(1_000_000),
         Value::Chars(s) => chrono::DateTime::parse_from_rfc3339(s)
             .ok()
             .or_else(|| {
