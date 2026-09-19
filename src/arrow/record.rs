@@ -196,6 +196,9 @@ fn format_utf8_value(v: &Value) -> String {
 ///
 /// `Value::Hex` stores the decoded value as `u128` — extract minimal big-endian bytes.
 /// All other types fall back to the UTF-8 string representation.
+///
+/// 注意：`hex` 字段**不再**走 Binary 列（DIV-1 已对齐为 Utf8，见 `schema.rs`），
+/// 所以 `Value::Hex` 分支只在**显式声明 Binary** 的列上才可达。
 fn to_raw_bytes(v: &Value) -> Vec<u8> {
     match v {
         Value::Hex(h) => {
@@ -368,5 +371,46 @@ mod tests {
     #[test]
     fn chars_fallback_for_binary() {
         assert_eq!(to_raw_bytes(&Value::Chars("hello".into())), b"hello");
+    }
+
+    /// DIV-1 修复后的**值层对拍**：`hex` 字段（现为 Utf8 列）写出的字符串，必须与
+    /// `wp-arrow`（`convert.rs` `format!("{:#X}", h.0)`）和 `Value::Hex` 的 `Display`
+    /// 逐字符一致。三者同形正是「schema 改一行即可对齐、值层不用改」的前提。
+    #[test]
+    fn hex_column_uses_the_same_string_form_as_wp_arrow() {
+        use wp_model_core::model::types::value::HexT;
+
+        let rec = DataRecord::from(vec![FieldStorage::from(ModelField::from_hex(
+            "h",
+            HexT(0x1A2B),
+        ))]);
+        let schema = make_schema(&["h"]);
+        let batch = data_record_to_batch(&rec, &schema).unwrap();
+        let col = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
+            .expect("hex 列现在应是 Utf8/StringArray");
+        assert_eq!(col.value(0), "0x1A2B");
+        assert_eq!(col.value(0), format!("{:#X}", 0x1A2Bu128));
+    }
+
+    /// 反向钉桩：显式声明为 Binary 的列仍然拿原始字节（`to_raw_bytes` 的 Hex 分支）。
+    #[test]
+    fn explicit_binary_column_still_uses_raw_bytes() {
+        use wp_model_core::model::types::value::HexT;
+
+        let rec = DataRecord::from(vec![FieldStorage::from(ModelField::from_hex(
+            "h",
+            HexT(0x1A2B),
+        ))]);
+        let schema = Arc::new(Schema::new(vec![Field::new("h", DataType::Binary, true)]));
+        let batch = data_record_to_batch(&rec, &schema).unwrap();
+        let col = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::BinaryArray>()
+            .unwrap();
+        assert_eq!(col.value(0), &[0x1A, 0x2B]);
     }
 }
