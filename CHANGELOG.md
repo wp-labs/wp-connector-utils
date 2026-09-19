@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-09-19
+
+### Added
+
+- **公开 `arrow::wp_type_to_arrow`**（`DataType` → Arrow 列类型的映射）。它是 wp-model ↔ Arrow 线协议口径的**唯一实现**，接收侧（`wf-runtime`）现在直接复用它而不是维护自己的第二张表（A-1 收敛）。
+
 ## [0.3.1] - 2026-09-19
 
 ### Fixed
@@ -64,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ndjson` 模块：`ndjson_to_record_batch`
 - 测试覆盖：45 个（arrow 29 + batch 8 + ndjson 8）
 
-[Unreleased]: https://github.com/wp-labs/wp-connector-utils/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/wp-labs/wp-connector-utils/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/wp-labs/wp-connector-utils/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/wp-labs/wp-connector-utils/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/wp-labs/wp-connector-utils/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/wp-labs/wp-connector-utils/compare/v0.2.0...v0.2.1

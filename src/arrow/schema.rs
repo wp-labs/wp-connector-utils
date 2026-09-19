@@ -23,8 +23,15 @@ pub fn infer_arrow_schema(fields: &[String]) -> Schema {
     )
 }
 
-/// Map wp_model_core DataType to Arrow DataType.
-fn wp_type_to_arrow(dt: &wp_model_core::model::DataType) -> DataType {
+/// Map `wp_model_core::model::DataType` to Arrow `DataType`.
+///
+/// **这是 wp-model ↔ Arrow 列类型契约的唯一实现**（线协议口径的单一事实来源）：
+/// 接收侧期望（`wf-runtime`）与规格表都以它为准，规格表见
+/// `wp-reactor/docs/design/arrow-type-mapping.md`。
+///
+/// match 是穷尽的（无 `_` 兜底）：`wp-model-core` 新增变体会直接**编译失败** —— 这是刻意的，
+/// 逼对新类型表态，而不是静默兜到 `Utf8`。
+pub fn wp_type_to_arrow(dt: &wp_model_core::model::DataType) -> DataType {
     use wp_model_core::model::DataType as WpDt;
     match dt {
         WpDt::Bool => DataType::Boolean,
