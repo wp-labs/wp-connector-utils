@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-09-19
+
+### Changed
+
+- **`arrow::wp_type_to_arrow` 改为再导出（A-2 第 2 步）**：实现迁往 `wp-arrow` 的 `contract::wp_type_to_arrow`，本 crate 只 `pub use` 它。公开路径与签名不变（接收侧 `wf-runtime` 零改动），且这个路径现在**就是**契约实现本身（不是副本）—— 两者在结构上不可能再漂移。
+  口径钉桩（全 37 变体）随实现移往 `wp-arrow` 的 `wire_contract_full_mapping_is_pinned`；本 crate 保留消费侧冒烟：「再导出即同一函数」+ DIV-1（`Hex`）/ DIV-2（`BigInt`）/ DIV-3（结构化）与时间/二进制等易错行。
+- 新增依赖 `wp-arrow`（`0.4.1`+；它用与本 crate 一致的 `arrow 60` / `wp-model-core 0.10`，依赖图内 `arrow` 仍只有一个版本）。
+
 ## [0.3.2] - 2026-09-19
 
 ### Added
