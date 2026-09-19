@@ -5,13 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-09-19
+
+### Fixed
+
+- **修正 0.3.3 的依赖要求写法（该版本应被 yank）**：`wp-arrow = "0.4"` 的 caret 语义允许解析到 **0.4.0**，而 `contract` 模块是 **0.4.1** 才有的 —— 于是消费方（如 wp-reactor）`Cargo.lock` 停在 0.4.0 时会直接 `unresolved import wp_arrow::contract`、编不过。现改为 `wp-arrow = "0.4.1"`（`>= 0.4.1, < 0.5.0`）。
+  教训：当 B 依赖 C 的**新 API** 时，要求必须写**最低可用版本**，不能写只含 major.minor 的宽松形式。
+
 ## [0.3.3] - 2026-09-19
 
 ### Changed
 
 - **`arrow::wp_type_to_arrow` 改为再导出（A-2 第 2 步）**：实现迁往 `wp-arrow` 的 `contract::wp_type_to_arrow`，本 crate 只 `pub use` 它。公开路径与签名不变（接收侧 `wf-runtime` 零改动），且这个路径现在**就是**契约实现本身（不是副本）—— 两者在结构上不可能再漂移。
   口径钉桩（全 37 变体）随实现移往 `wp-arrow` 的 `wire_contract_full_mapping_is_pinned`；本 crate 保留消费侧冒烟：「再导出即同一函数」+ DIV-1（`Hex`）/ DIV-2（`BigInt`）/ DIV-3（结构化）与时间/二进制等易错行。
-- 新增依赖 `wp-arrow`（`0.4.1`+；它用与本 crate 一致的 `arrow 60` / `wp-model-core 0.10`，依赖图内 `arrow` 仍只有一个版本）。
+- 新增依赖 `wp-arrow`（它用与本 crate 一致的 `arrow 60` / `wp-model-core 0.10`，依赖图内 `arrow` 仍只有一个版本）。
+  > ⚠️ 本条版本的依赖写成 `"0.4"` 是错的，由 **0.3.4** 修正；请用 0.3.4+。
 
 ## [0.3.2] - 2026-09-19
 
