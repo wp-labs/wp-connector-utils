@@ -1,6 +1,6 @@
 [package]
 name = "wp-connector-utils"
-version = "0.4.0" #@gxl:set(version)
+version = "0.4.1" #@gxl:set(version)
 edition = "2024"
 description = "Shared utilities for WP connector implementations — Arrow IPC encode/decode, WireFormat, NDJSON conversion, and batch metadata processing"
 authors = ["WarpParse Dev Team"]

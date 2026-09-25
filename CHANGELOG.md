@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-25
+
+### Fixed
+
+- **`Encoder` / `Decoder` 补齐 `Sync` 上界**：codec 会被持有在 `Send + Sync` 的 sink 结构体里（如 `wp-core-connectors` 的 `NetWriter`），而 0.4.0 的 trait 只要求 `Send`，导致 `Box<dyn Encoder>` 无法被跨线程共享、集成方编译失败。现在 `Encoder` / `Decoder`（及内部 `AeadCipher`）统一要求 `Send + Sync`；所有内建实现（`Vec<u8>` / 函数指针 / 计数器）均满足，行为不变。
+
 ## [0.4.0] - 2026-09-23
 
 ### Added

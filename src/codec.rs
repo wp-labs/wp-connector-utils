@@ -115,7 +115,10 @@ pub struct CodecStats {
 }
 
 /// 有状态编码器：可多次 `encode`，最后 `finish` 冲刷尾部。
-pub trait Encoder: Send {
+///
+/// 编码器会被持有在 `Send + Sync` 的 sink 结构体里（如 `NetWriter`），因此要求
+/// `Send + Sync`。所有内建实现均满足（内部仅 `Vec<u8>` / 函数指针 / 计数器等）。
+pub trait Encoder: Send + Sync {
     fn encode(&mut self, input: &[u8], output: &mut Vec<u8>) -> Result<(), CodecError>;
     fn finish(&mut self, output: &mut Vec<u8>) -> Result<(), CodecError>;
     /// 运行期统计。
@@ -125,7 +128,7 @@ pub trait Encoder: Send {
 }
 
 /// 有状态解码器：`decode` 消费 0+ 完整长度前缀块，`finish` 冲刷尾部。
-pub trait Decoder: Send {
+pub trait Decoder: Send + Sync {
     fn decode(&mut self, input: &[u8], output: &mut Vec<u8>) -> Result<(), CodecError>;
     fn finish(&mut self, output: &mut Vec<u8>) -> Result<(), CodecError>;
 }
@@ -333,7 +336,7 @@ fn new_nonce() -> Result<[u8; NONCE_LEN], CodecError> {
 
 /// AEAD 后端抽象：屏蔽 ring（AES-256-GCM）与 sm4-gcm（SM4-GCM）两套 API 差异。
 /// `aad` 为附加认证数据（这里只放帧的 `kind` 字节，把「帧类型」与密文绑定，防帧头被重新标记）。
-trait AeadCipher: Send {
+trait AeadCipher: Send + Sync {
     fn seal(
         &self,
         nonce: &[u8; NONCE_LEN],
