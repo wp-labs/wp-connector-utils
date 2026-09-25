@@ -39,12 +39,16 @@ let batch = ndjson_to_record_batch(&lines, &schema)?.expect("non-empty input");
   (s / ms / us / ns) and `true/false`/`1/0` boolean text.
 - **Batch metadata** — OML-name injection for text sinks, frame-tag resolution for
   Arrow sinks.
+- **Codec** — sink-side compression (`gzip`/`zstd`) + encryption (`AES-256-GCM`/`SM4-GCM`),
+  chainable (compress-then-encrypt) with a self-describing frame header and GCM-authenticated
+  frames. See [performance benchmarks](BENCHMARKS.md).
 
 ## Modules
 
 | Module | Purpose |
 | --- | --- |
 | [`arrow`](src/arrow/) | IPC encode/decode, WireFormat, schema inference, `DataRecord → RecordBatch` |
+| [`codec`](src/codec.rs) | Compression (gzip/zstd) + encryption (AES-256-GCM/SM4-GCM) encode/decode |
 | [`ndjson`](src/ndjson.rs) | NDJSON lines → Arrow `RecordBatch` against a known schema |
 | [`batch`](src/batch.rs) | Batch metadata helpers (OML name injection, frame-tag resolution) |
 
@@ -109,6 +113,34 @@ let records = inject_oml_name(&meta, data);
 // Resolve the Arrow frame tag: meta.oml_name takes precedence over the config tag.
 let tag = resolve_frame_tag(&meta, "default_tag");
 ```
+
+### `codec` — compression + encryption
+
+```rust
+use wp_connector_utils::codec::{
+    build_decoder, build_encoder, Cipher, CompressConfig, CompressionAlgo, EncryptConfig,
+};
+
+// Sink side: compress-then-encrypt.
+let compress = CompressConfig { algo: CompressionAlgo::Zstd, level: 3 };
+let encrypt = EncryptConfig { cipher: Cipher::Aes256Gcm, key: vec![0u8; 32] };
+let mut encoder = build_encoder(Some(&compress), Some(&encrypt))?;
+
+let mut wire = Vec::new();
+encoder.encode(b"log line\n", &mut wire)?;
+encoder.finish(&mut wire)?; // flush the compression tail block
+
+// Source side: decrypt-then-decompress (reverse order).
+let mut decoder = build_decoder(Some(&compress), Some(&encrypt))?;
+let mut plain = Vec::new();
+decoder.decode(&wire, &mut plain)?;
+decoder.finish(&mut plain)?;
+```
+
+> **Performance** — `zstd` is the preferred compression default (faster *and* smaller than
+> `gzip` on log-like text). `AES-256-GCM` is hardware-accelerated (~5 GiB/s), while `SM4-GCM`
+> is a pure-software implementation (~75 MiB/s, ~70× slower). See
+> [BENCHMARKS.md](BENCHMARKS.md) for full data and conclusions.
 
 ### `ndjson` — JSON lines → Arrow
 

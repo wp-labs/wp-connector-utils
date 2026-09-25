@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-09-25
+
+### Added
+
+- 新增 `codec` 性能基准（`benches/codec.rs`，criterion）：压缩（gzip/zstd × 级别）、加密（AES-256-GCM/SM4-GCM）、组合（先压缩后加密）与解码吞吐，及启动时的压缩比打印；dev-dependency 增加 `criterion`。
+
+### Documentation
+
+- 新增 `BENCHMARKS.md`：codec 性能数据与结论（SM4-GCM 慢 AES-GCM 约 70×；zstd 优于 gzip；压缩对日志文本收益大、对高熵数据无效；帧开销 36 B/块）。
+- README 补 `codec` 模块说明与性能提示，链接到 `BENCHMARKS.md`。
+
 ## [0.4.1] - 2026-09-25
 
 ### Fixed
