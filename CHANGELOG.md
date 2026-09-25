@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-23
+
+### Added
+
+- **新增 `codec` 模块（sink 压缩 + 加密，字节级、同步、无 tokio）**：提供 `Encoder` / `Decoder` trait 与
+  `build_encoder` / `build_decoder`。压缩支持 `gzip` / `zstd`（按 64 KiB 块流式分块）；加密支持 `AES-256-GCM` /
+  `SM4-GCM`（国密，每块独立随机 nonce，输出 `nonce(12) || ciphertext+tag`）；链式组合 **先压缩后加密**。
+  sink 侧用 `build_encoder`，source 侧用 `build_decoder`，两端共享同一线格式。
+- **自描述帧头 + 帧认证**：每个块为 `magic("WP") | version | kind | length | payload`，`kind` 标识 gzip/zstd/aes-256-gcm/sm4-gcm，
+  字节流自解释（拿到即可判断是否密文、用哪个算法）；帧的 `kind` 作为 **AAD** 纳入 GCM 认证（换 `kind` 解不开），
+  decoder 校验 kind 不匹配即拒绝。
+- **可观测统计**：`Encoder::stats()` 返回 `CodecStats { nonces_issued, sealed_bytes }`，`nonces_issued > 0` 即证明
+  数据确实经过加密层。
+- **金标准测试向量**：钉死 NIST AES-256-GCM 零向量与 Bouncy Castle SM4-GCM 向量，逐字节断言 `seal` 输出与官方标准一致；
+  另含密文性质断言（明文不可见、密文不可再压缩）。
+- 新增依赖 `flate2`（gzip）、`zstd`（zstd）、`ring`（AES-256-GCM）、`sm4-gcm`（SM4-GCM，国密）。
+
 ## [0.3.5] - 2026-09-19
 
 ### Changed
