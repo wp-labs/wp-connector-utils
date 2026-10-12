@@ -1,6 +1,6 @@
 [package]
 name = "wp-connector-utils"
-version = "0.4.2" #@gxl:set(version)
+version = "0.5.0" #@gxl:set(version)
 edition = "2024"
 description = "Shared utilities for WP connector implementations — Arrow IPC encode/decode, WireFormat, NDJSON conversion, and batch metadata processing"
 authors = ["WarpParse Dev Team"]
@@ -13,7 +13,7 @@ keywords = ["arrow", "ipc", "connector", "warpparse", "ndjson"]
 categories = ["asynchronous", "encoding", "parsing"]
 
 [dependencies]
-wp-connector-api = "0.13"
+wp-connector-api = "0.14"
 wp-model-core = "0.10"
 # 线协议契约（列类型表 + 值层）的实现处（A-2 第 2/3 步：本 crate 的
 # `arrow::wp_type_to_arrow` 与 `arrow::record::*` 已改为转发它）
@@ -24,7 +24,7 @@ wp-model-core = "0.10"
 # （`unresolved import wp_arrow::contract`）；0.3.3 就是这个写法的事故版。
 wp-arrow = "0.4"
 arrow = { version = "60", default-features = false, features = ["ipc"] }
-orion-error = "0.8"
+orion-error = "0.9"
 serde_json = "1.0"
 chrono = "0.4"
 # codec：压缩（gzip/zstd）+ 加密（AES-256-GCM / SM4-GCM）
