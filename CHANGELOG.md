@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-10-28
+
+### Changed
+- **`zstd` 0.13 → 0.14**：实际锁定 `zstd 0.14.3` / `zstd-safe 8.2.0` / `zstd-sys 2.1.2`，修复 `RUSTSEC-2026-0391` / `0398` / `0403`（流复用、seekable 越界、旧格式解压未初始化内存）。codec 行为与 API 不变（`build_encoder` / `build_decoder` 签名未改）。
+
+### Note
+- 下游（`wp-core-connectors` → 引擎 / 应用）需升级到本版才能消除审计告警。
+
 ## [0.5.0] - 2026-10-12
 
 ### Changed
