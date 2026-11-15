@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-11-15
+
+### Changed
+- **接力链路不再重复追加 `wp_oml_name`**：`inject_oml_name` 此前无条件 append，当记录已经带 `wp_oml_name`（上游 wparse 实例写入后被规则提取）时，输出会出现**两个同名字段**。现在按 `UPSTREAM_OML_NAME_KEEP` 决定：
+  - `false`（默认）：本实例的 OML 名**覆盖**上游值，先移除同名字段再追加，保证只有一个
+  - `true`：保留上游值，不追加、不 clone
+
+### Added
+- **`UPSTREAM_OML_NAME_KEEP`** 环境变量（默认 `false`），与 `WP_INS_ID` / `WP_GLOBAL_TAGS` 一样从进程环境读取，启动时加载的 `.env` 同样生效。可接受 `1/true/yes/on` 与 `0/false/no/off`；无法识别的值按默认值处理。
+- `inject_oml_name_with(keep_upstream, meta, data)`：带显式开关的纯函数版，便于测试；`parse_flag` 公开供上层复用。
+
 ## [0.5.1] - 2026-10-28
 
 ### Changed
